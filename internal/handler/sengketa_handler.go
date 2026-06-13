@@ -1,13 +1,11 @@
 package handler
 
 import (
-	"fmt"
 	"net/http"
-	"os"
 	"path/filepath"
-	"time"
 
 	"pemira-backend/internal/service"
+	"pemira-backend/internal/utils"
 
 	"github.com/gin-gonic/gin"
 )
@@ -21,68 +19,57 @@ func NewSengketaHandler(ss service.SengketaService) *SengketaHandler {
 }
 
 func (h *SengketaHandler) SubmitSengketa(c *gin.Context) {
-	// 1. Ambil email pelapor dari session JWT
 	emailPelapor, exists := c.Get("user_email")
 	if !exists {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "Sesi tidak valid, silakan login ulang"})
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Sesi tidak valid"})
 		return
 	}
 
-	// 2. Ambil data NIM Sengketa dari Form Text
 	nimSengketa := c.PostForm("nim_sengketa")
-	if nimSengketa == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "NIM sengketa wajib diisi"})
-		return
-	}
-
-	// 3. Ambil file foto KTM dari Form File
 	file, err := c.FormFile("foto_ktm")
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "File foto KTM wajib diunggah"})
 		return
 	}
 
-	// 🔒 VALIDASI FILE: Pastikan file berupa gambar (jpg/jpeg/png)
+	// Validasi file (tetap sama, ini sudah bagus)
 	ext := filepath.Ext(file.Filename)
 	if ext != ".jpg" && ext != ".jpeg" && ext != ".png" {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Format file harus JPG, JPEG, atau PNG"})
 		return
 	}
-
-	// 🔒 VALIDASI UKURAN: Maksimal 2MB (2 * 1024 * 1024 bytes) (BARU)
 	if file.Size > 2*1024*1024 {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Ukuran file terlalu besar! Maksimal 2MB cuy."})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Ukuran file terlalu besar! Maksimal 2MB."})
 		return
 	}
 
-	// 4. Siapkan folder penyimpanan lokal di server
-	uploadDir := "./uploads/ktm"
-	if err := os.MkdirAll(uploadDir, os.ModePerm); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Gagal menyiapkan folder server"})
-		return
-	}
+	// --- UBAH BAGIAN INI: GANTI LOCAL SAVE KE CLOUDINARY ---
 
-	// Bikin nama file unik agar tidak bentrok (Format: NIM_TIMESTAMP.ext)
-	uniqueFilename := fmt.Sprintf("%s_%d%s", nimSengketa, time.Now().Unix(), ext)
-	finalPath := filepath.Join(uploadDir, uniqueFilename)
-
-	// 5. Simpan file fisik ke folder server
-	if err := c.SaveUploadedFile(file, finalPath); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Gagal menyimpan file di server"})
-		return
-	}
-
-	// 6. Jalankan Logika Bisnis di Layer Service
-	err = h.sengketaService.AjukanSengketa(c.Request.Context(), nimSengketa, emailPelapor.(string), finalPath)
+	// 1. Buka file buat dibaca
+	openedFile, err := file.Open()
 	if err != nil {
-		// Jika gagal di database, hapus file gambar yang terlanjur terupload biar gak menumpuk sampah
-		os.Remove(finalPath)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Gagal membaca file"})
+		return
+	}
+	defer openedFile.Close()
+
+	// 2. Panggil fungsi Cloudinary yang kita buat tadi
+	// (Lu tinggal import package utils lu)
+	cloudURL, err := utils.UploadToCloudinary(openedFile)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Gagal upload ke cloud: " + err.Error()})
+		return
+	}
+
+	// 3. Simpan cloudURL ke database melalui Service
+	err = h.sengketaService.AjukanSengketa(c.Request.Context(), nimSengketa, emailPelapor.(string), cloudURL)
+	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 
 	c.JSON(http.StatusOK, gin.H{
 		"status":  "success",
-		"message": "Laporan sengketa berhasil dikirim! Panitia akan segera memeriksa KTM Anda.",
+		"message": "Laporan sengketa berhasil diproses oleh KPU.",
 	})
 }

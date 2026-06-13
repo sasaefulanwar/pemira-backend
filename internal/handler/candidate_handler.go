@@ -3,12 +3,11 @@ package handler
 import (
 	"fmt"
 	"net/http"
-	"os"
-	"path/filepath"
 	"strconv"
 
 	"pemira-backend/internal/repository"
 	"pemira-backend/internal/service"
+	"pemira-backend/internal/utils"
 
 	"github.com/gin-gonic/gin"
 )
@@ -45,7 +44,7 @@ func (h *CandidateHandler) GetCandidatesByElection(c *gin.Context) {
 
 // 2. POST (Admin): Nambah Paslon + Upload Foto
 func (h *CandidateHandler) CreateCandidate(c *gin.Context) {
-	// Karena ada upload file, kita gak pakai JSON, tapi pakai Form-Data
+	// 1. Ambil data teks dari form
 	electionID, _ := strconv.Atoi(c.PostForm("election_id"))
 	candidateNumber, _ := strconv.Atoi(c.PostForm("candidate_number"))
 	chairmanName := c.PostForm("chairman_name")
@@ -53,26 +52,29 @@ func (h *CandidateHandler) CreateCandidate(c *gin.Context) {
 	vision := c.PostForm("vision")
 	mission := c.PostForm("mission")
 
-	var photoPath string
+	var photoURL string
 
-	// Handle File Upload Foto
+	// 2. Handle File Upload ke Cloudinary
 	file, err := c.FormFile("photo")
 	if err == nil {
-		// Buat folder otomatis kalau belum ada
-		os.MkdirAll("./uploads/candidates", os.ModePerm)
-
-		// Format nama file: paslon_{electionID}_{nomorUrut}.jpg
-		filename := "paslon_" + strconv.Itoa(electionID) + "_" + strconv.Itoa(candidateNumber) + filepath.Ext(file.Filename)
-		savePath := "./uploads/candidates/" + filename
-
-		if err := c.SaveUploadedFile(file, savePath); err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "Gagal menyimpan foto kandidat"})
+		// Buka file untuk dibaca
+		openedFile, err := file.Open()
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Gagal membaca file foto"})
 			return
 		}
-		// Path yang bakal disimpan ke database
-		photoPath = "/files/candidates/" + filename
+		defer openedFile.Close()
+
+		// Upload ke Cloudinary menggunakan utils yang tadi kita buat
+		cloudURL, err := utils.UploadToCloudinary(openedFile)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Gagal upload foto ke cloud: " + err.Error()})
+			return
+		}
+		photoURL = cloudURL
 	}
 
+	// 3. Siapkan request ke service
 	req := repository.CandidateResponse{
 		ElectionID:       electionID,
 		CandidateNumber:  candidateNumber,
@@ -80,9 +82,10 @@ func (h *CandidateHandler) CreateCandidate(c *gin.Context) {
 		ViceChairmanName: viceChairmanName,
 		Vision:           vision,
 		Mission:          mission,
-		PhotoURL:         photoPath,
+		PhotoURL:         photoURL, // Ini sekarang berisi URL Cloudinary
 	}
 
+	// 4. Panggil service (logika audit sudah aman di service)
 	adminEmail, _ := c.Get("user_email")
 	ipAddress := c.ClientIP()
 
@@ -92,7 +95,10 @@ func (h *CandidateHandler) CreateCandidate(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{"status": "success", "message": "Kandidat berhasil ditambahkan"})
+	c.JSON(http.StatusOK, gin.H{
+		"status":  "success",
+		"message": "Pasangan Calon berhasil didaftarkan ke sistem.",
+	})
 }
 
 // 3. PUT (Admin): Update Teks Visi Misi / Nama
