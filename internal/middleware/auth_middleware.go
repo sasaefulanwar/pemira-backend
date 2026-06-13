@@ -1,57 +1,46 @@
 package middleware
 
 import (
-	"fmt"
 	"net/http"
 	"os"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 	"github.com/golang-jwt/jwt/v5"
 )
 
-// RequireAuth adalah satpam yang akan mencegat request tanpa token JWT valid
 func RequireAuth() gin.HandlerFunc {
 	return func(c *gin.Context) {
-		// 1. Coba ambil tiket JWT dari dalam Cookie
-		tokenString, err := c.Cookie("jwt_session")
-		if err != nil {
-			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "Akses ditolak: Anda belum login"})
+		// 1. Ambil dari Header Authorization
+		authHeader := c.GetHeader("Authorization")
+		if authHeader == "" {
+			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "Akses ditolak: Token tidak ditemukan"})
 			return
 		}
 
-		csrfHeader := c.GetHeader("X-CSRF-Token")
-		csrfCookie, err := c.Cookie("csrf_token")
-
-		if err != nil || csrfHeader == "" || csrfHeader != csrfCookie {
-			c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": "Akses ditolak: CSRF Token tidak valid!"})
+		// 2. Ambil token dari format "Bearer <token>"
+		parts := strings.Split(authHeader, " ")
+		if len(parts) != 2 || parts[0] != "Bearer" {
+			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "Format token tidak valid"})
 			return
 		}
+		tokenString := parts[1]
 
-		// 2. Ambil kunci rahasia dari .env
+		// 3. Verifikasi JWT
 		secretKey := os.Getenv("JWT_SECRET")
-
-		// 3. Verifikasi keaslian tiket JWT
 		token, err := jwt.Parse(tokenString, func(token *jwt.Token) (interface{}, error) {
-			// Pastikan algoritma enkripsinya sesuai
-			if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
-				return nil, fmt.Errorf("metode token tidak valid: %v", token.Header["alg"])
-			}
 			return []byte(secretKey), nil
 		})
 
-		// 4. Jika token rusak, kedaluwarsa, atau palsu
 		if err != nil || !token.Valid {
-			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "Sesi Anda telah berakhir atau tidak valid"})
+			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "Sesi berakhir!"})
 			return
 		}
 
-		// 5. Ekstrak data email dari dalam token (claims)
+		// 4. Set context & Next
 		if claims, ok := token.Claims.(jwt.MapClaims); ok {
-			// Simpan email ke dalam context biar bisa dipakai oleh Handler selanjutnya
 			c.Set("user_email", claims["email"])
 		}
-
-		// 6. Kalau tiketnya sah, silakan masuk ke proses selanjutnya!
 		c.Next()
 	}
 }
