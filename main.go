@@ -23,8 +23,11 @@ func main() {
 		log.Println("⚠️ Warning: File .env tidak ditemukan")
 	}
 
-	// 2. Connect ke PostgreSQL
-	db := config.ConnectDB()
+	db, err := config.ConnectDB()
+	if err != nil {
+		log.Fatalf("Gagal inisialisasi database: %v", err)
+	}
+
 	defer db.Close()
 
 	auditRepo := repository.NewAuditRepository(db)
