@@ -71,11 +71,13 @@ func (h *AuthHandler) GoogleLogin(c *gin.Context) {
 	rand.Read(bytes)
 	csrfToken := hex.EncodeToString(bytes)
 
-	c.SetSameSite(http.SameSiteLaxMode)
+	// 1. Ganti SameSite ke None (Wajib buat cross-domain)
+	c.SetSameSite(http.SameSiteNoneMode)
 
-	c.SetCookie("jwt_session", tokenString, 3600*24, "/", "localhost", false, true)
-
-	c.SetCookie("csrf_token", csrfToken, 3600*24, "/", "localhost", false, false)
+		// 2. Ganti domain ke "" (biar otomatis nyesuaiin domain server)
+		// 3. Set Secure ke true (Wajib karena Railway pake HTTPS)
+	c.SetCookie("jwt_session", tokenString, 3600*24, "/", "", true, true)
+	c.SetCookie("csrf_token", csrfToken, 3600*24, "/", "", true, false)
 
 	c.JSON(http.StatusOK, gin.H{
 		"status":  "success",
