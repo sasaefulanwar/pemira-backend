@@ -82,6 +82,7 @@ func (h *AuthHandler) GoogleLogin(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"status":  "success",
 		"message": "Login berhasil",
+		"token":   tokenString,
 		"data": gin.H{
 			"email": user.EmailGmailLogin,
 			"role":  user.Role,
