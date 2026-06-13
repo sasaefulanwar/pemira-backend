@@ -5,6 +5,7 @@ import (
 	"errors"
 	"log"
 	"os"
+	"pemira-backend/internal/models"
 	"pemira-backend/internal/repository"
 	"time"
 
@@ -16,6 +17,7 @@ import (
 type AuthService interface {
 	VerifyGoogleLogin(ctx context.Context, googleToken string) (string, error)
 	GenerateJWT(email string) (string, error)
+	GetUserByEmail(email string) (*models.Pemilih, error)
 }
 
 type authServiceImpl struct {
@@ -55,7 +57,6 @@ func (s *authServiceImpl) VerifyGoogleLogin(ctx context.Context, googleToken str
 	return email, nil
 }
 
-// GenerateJWT membuat tiket masuk (session) untuk aplikasi kita sendiri
 func (s *authServiceImpl) GenerateJWT(email string) (string, error) {
 	secretKey := os.Getenv("JWT_SECRET")
 	if secretKey == "" {
@@ -76,4 +77,12 @@ func (s *authServiceImpl) GenerateJWT(email string) (string, error) {
 	}
 
 	return tokenString, nil
+}
+
+func (s *authServiceImpl) GetUserByEmail(email string) (*models.Pemilih, error) {
+	user, err := s.repo.GetUserByEmail(email)
+	if err != nil {
+		return nil, err
+	}
+	return user, nil
 }

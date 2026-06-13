@@ -1,10 +1,14 @@
 package handler
 
 import (
+	"bytes"
 	"crypto/rand"
 	"encoding/hex"
+	"io"
+	"log"
 	"net/http"
 
+	"pemira-backend/internal/models"
 	"pemira-backend/internal/service"
 
 	"github.com/gin-gonic/gin"
@@ -20,25 +24,43 @@ func NewAuthHandler(as service.AuthService) *AuthHandler {
 
 // Format JSON yang dikirim React (berisi token dari Google)
 type GoogleLoginRequest struct {
-	Credential string `json:"credential" binding:"required"`
+	Credential string `json:"credential" validate:"required"`
 }
 
 func (h *AuthHandler) GoogleLogin(c *gin.Context) {
 	var req GoogleLoginRequest
 
+	bodyBytes, _ := io.ReadAll(c.Request.Body)
+
+	// Karena body udah dibaca, kita harus balikin lagi biar bisa dibind
+	c.Request.Body = io.NopCloser(bytes.NewBuffer(bodyBytes))
+
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Token Google tidak ditemukan"})
+		log.Printf("Error binding: %v", err) // Cek errornya di terminal
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Format JSON tidak valid"})
 		return
 	}
 
-	// 1. Verifikasi keaslian token ke Google & cek Blacklist
 	email, err := h.authService.VerifyGoogleLogin(c.Request.Context(), req.Credential)
 	if err != nil {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
 		return
 	}
 
-	// 2. Buat tiket JWT untuk sesi aplikasi kita
+	user, err := h.authService.GetUserByEmail(email)
+	if err != nil {
+		if err.Error() == "sql: no rows in result set" {
+			user = &models.Pemilih{
+				EmailGmailLogin: &email,  // Sesuaikan nama field dengan yang ada di struct models.Pemilih lu
+				Role:            "voter", // Default role untuk akun baru
+				NIM:             "",      // Kosongkan agar frontend me-redirect ke /bind-nim
+			}
+		} else {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Gagal mengambil data pengguna"})
+			return
+		}
+	}
+
 	tokenString, err := h.authService.GenerateJWT(email)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Gagal membuat sesi login"})
@@ -49,21 +71,19 @@ func (h *AuthHandler) GoogleLogin(c *gin.Context) {
 	rand.Read(bytes)
 	csrfToken := hex.EncodeToString(bytes)
 
-	// Set SameSite=Lax sebelum pasang Cookie
 	c.SetSameSite(http.SameSiteLaxMode)
 
-	// Cookie 1: JWT Session (HttpOnly = true -> Gak bisa dibaca React)
 	c.SetCookie("jwt_session", tokenString, 3600*24, "/", "localhost", false, true)
 
-	// Cookie 2: CSRF Token (HttpOnly = false -> BISA dibaca React)
 	c.SetCookie("csrf_token", csrfToken, 3600*24, "/", "localhost", false, false)
 
-	// 4. Kirim respons sukses ke React
 	c.JSON(http.StatusOK, gin.H{
 		"status":  "success",
 		"message": "Login berhasil",
 		"data": gin.H{
-			"email": email,
+			"email": user.EmailGmailLogin,
+			"role":  user.Role,
+			"nim":   user.NIM,
 		},
 	})
 }

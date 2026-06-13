@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"fmt"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -31,6 +32,7 @@ func (h *CandidateHandler) GetCandidatesByElection(c *gin.Context) {
 
 	candidates, err := h.candidateService.GetCandidatesByElection(c.Request.Context(), electionID)
 	if err != nil {
+		fmt.Println("ERROR DATABASE:", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Gagal mengambil data kandidat"})
 		return
 	}

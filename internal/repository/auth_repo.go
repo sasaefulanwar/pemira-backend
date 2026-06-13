@@ -3,6 +3,7 @@ package repository
 import (
 	"context"
 	"log"
+	"pemira-backend/internal/models"
 
 	"github.com/jmoiron/sqlx"
 )
@@ -10,6 +11,7 @@ import (
 // AuthRepository adalah kontrak untuk akses database terkait autentikasi
 type AuthRepository interface {
 	IsEmailBlacklisted(ctx context.Context, email string) (bool, error)
+	GetUserByEmail(email string) (*models.Pemilih, error) // <--- WAJIB TAMBAH INI
 }
 
 type authRepositoryImpl struct {
@@ -32,4 +34,18 @@ func (r *authRepositoryImpl) IsEmailBlacklisted(ctx context.Context, email strin
 	}
 
 	return count > 0, nil
+}
+
+func (r *authRepositoryImpl) GetUserByEmail(email string) (*models.Pemilih, error) {
+	var user models.Pemilih
+	// Pastikan kolom ini ada di struct models.Pemilih kamu ya!
+	query := "SELECT nim, nama, email_gmail_login, role FROM pemilih WHERE email_gmail_login = $1"
+
+	// Gunakan GetContext biar konsisten dengan method lainnya
+	err := r.db.Get(&user, query, email)
+	if err != nil {
+		log.Printf("❌ Gagal ambil user by email: %v", err)
+		return nil, err
+	}
+	return &user, nil
 }

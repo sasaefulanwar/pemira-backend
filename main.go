@@ -64,12 +64,15 @@ func main() {
 	// 4. Setup Gin Router
 	router := gin.Default()
 
-	router.Use(cors.New(cors.Config{
-		AllowOrigins:     []string{"http://localhost:3000"},
+	config := cors.Config{
+		AllowOrigins:     []string{"http://localhost:5173"},
 		AllowMethods:     []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
-		AllowHeaders:     []string{"Origin", "Content-Type", "Authorization"},
+		AllowHeaders:     []string{"Origin", "Content-Type", "Authorization", "X-CSRF-Token"},
+		ExposeHeaders:    []string{"Content-Length", "X-CSRF-Token"},
 		AllowCredentials: true,
-	}))
+		MaxAge:           12 * time.Hour,
+	}
+	router.Use(cors.New(config))
 
 	// 5. Daftarkan Endpoint API
 	api := router.Group("/api/v1")
@@ -84,7 +87,7 @@ func main() {
 			protected.POST("/votes/cast", middleware.RateLimiter(3, time.Minute), voteHandler.CastVote)
 			protected.GET("/elections/:id/candidates", candidateHandler.GetCandidatesByElection)
 			protected.GET("/elections/:id/results", electionHandler.GetPublicResults)
-			protected.POST("/pemilih/sengketa", middleware.RateLimiter(2, time.Hour), sengketaHandler.SubmitSengketa)
+			protected.POST("/pemilih/sengketa", sengketaHandler.SubmitSengketa)
 		}
 
 		adminArea := api.Group("/admin")

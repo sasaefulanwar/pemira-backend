@@ -15,7 +15,6 @@ func RequireAuth() gin.HandlerFunc {
 		// 1. Coba ambil tiket JWT dari dalam Cookie
 		tokenString, err := c.Cookie("jwt_session")
 		if err != nil {
-			// Kalau nggak bawa cookie, langsung tendang!
 			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "Akses ditolak: Anda belum login"})
 			return
 		}
