@@ -90,7 +90,7 @@ func main() {
 			protected.POST("/votes/cast", middleware.RateLimiter(3, time.Minute), voteHandler.CastVote)
 			protected.GET("/elections/:id/candidates", candidateHandler.GetCandidatesByElection)
 			protected.GET("/elections/:id/results", electionHandler.GetPublicResults)
-			protected.POST("/pemilih/sengketa", sengketaHandler.SubmitSengketa)
+			protected.POST("/pemilih/sengketa", middleware.RateLimiter(3, time.Minute), sengketaHandler.SubmitSengketa)
 		}
 
 		adminArea := api.Group("/admin")
